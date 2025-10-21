@@ -10,11 +10,12 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.3",
-    "express": "^5.1.0",
-    "mongoose": "^8.19.2",
-    "twilio": "^5.10.3"
-  }
+ "dependencies": {
+  "express": "^4.18.2",
+  "mongoose": "^7.6.1",
+  "cors": "^2.8.5",
+  "dotenv": "^16.3.1",
+  "twilio": "^4.18.0"
+}
+
 }
