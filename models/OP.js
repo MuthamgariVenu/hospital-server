@@ -1,12 +1,17 @@
 const mongoose = require("mongoose");
 
-const opSchema = new mongoose.Schema({
-  opNumber: String,
-  patientName: String,
-  doctorName: String,
-  department: String,
-  status: String,
-  date: { type: Date, default: Date.now }
-});
+const OPSchema = new mongoose.Schema(
+  {
+    patientName: String,
+    patientNumber: String,
+    doctorName: String,
+    department: String,
+    time: String,
+    opNumber: String,
+    status: String,
+    date: { type: Date, default: Date.now }, // ✅ important
+  },
+  { timestamps: true } // adds createdAt, updatedAt too
+);
 
-module.exports = mongoose.model("OP", opSchema);
+module.exports = mongoose.model("OP", OPSchema);
