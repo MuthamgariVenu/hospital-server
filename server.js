@@ -5,6 +5,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const twilio = require("twilio");
 const OP = require("./models/OP");
+const Service = require("./models/Service"); // ✅ NEW: Service model
 
 dotenv.config();
 
@@ -55,7 +56,6 @@ app.post("/api/book-op", async (req, res) => {
 
     const eta = "30 minutes";
 
-    // ✅ Save Date as ISO Date object (important fix)
     const newOP = new OP({
       patientName: name,
       patientNumber: number,
@@ -69,7 +69,7 @@ app.post("/api/book-op", async (req, res) => {
         }),
       opNumber,
       status: "Pending",
-      date: new Date(), // ✅ Fix: store real Date type
+      date: new Date(),
     });
 
     await newOP.save();
@@ -108,7 +108,7 @@ app.get("/api/test-sms", async (req, res) => {
     const msg = await client.messages.create({
       body: "Test message from Ashwini Neuro Web App 🚑",
       from: process.env.TWILIO_PHONE_NUMBER,
-      to: "+919963643062", // replace with verified number
+      to: "+919963643062",
     });
 
     console.log("✅ SMS Sent:", msg.sid);
@@ -120,7 +120,7 @@ app.get("/api/test-sms", async (req, res) => {
 });
 
 // ======================================================
-// 🧠 4️⃣ Get All OPs (For general view)
+// 🧠 4️⃣ Get All OPs
 // ======================================================
 app.get("/api/getOPs", async (req, res) => {
   const data = await OP.find();
@@ -128,7 +128,7 @@ app.get("/api/getOPs", async (req, res) => {
 });
 
 // ======================================================
-// 📊 5️⃣ Basic Stats (Old version dashboard support)
+// 📊 5️⃣ Basic Stats
 // ======================================================
 app.get("/api/stats", async (req, res) => {
   const total = await OP.countDocuments();
@@ -140,8 +140,6 @@ app.get("/api/stats", async (req, res) => {
 // ======================================================
 // 👨‍⚕️ 6️⃣ ADMIN ROUTES
 // ======================================================
-
-// ✅ Get today's OP Bookings
 app.get("/api/admin/op-bookings", async (req, res) => {
   try {
     const today = new Date();
@@ -159,7 +157,6 @@ app.get("/api/admin/op-bookings", async (req, res) => {
   }
 });
 
-// ✅ Update OP Status (Doctor / Report / Completed)
 app.put("/api/admin/update-status/:id", async (req, res) => {
   try {
     const { status } = req.body;
@@ -183,7 +180,6 @@ app.put("/api/admin/update-status/:id", async (req, res) => {
       { new: true }
     );
 
-    // ✅ When completed, keep visible & auto move next
     if (status === "Completed") {
       console.log(`✅ ${updated.patientName} marked as Completed`);
       const nextPatient = await OP.findOne({ status: "Pending" }).sort({ _id: 1 });
@@ -203,21 +199,19 @@ app.put("/api/admin/update-status/:id", async (req, res) => {
   }
 });
 
-// ✅ Dashboard Counts (Today's Only)
-// ✅ Dashboard Counts (Accurate and synced with list)
+// ✅ Dashboard Counts
 app.get("/api/admin/dashboard-counts", async (req, res) => {
   try {
     const today = new Date();
     const startOfDay = new Date(today.setHours(0, 0, 0, 0));
     const endOfDay = new Date(today.setHours(23, 59, 59, 999));
 
-    // 🎯 Match exactly today's records (any status)
     const totalCount = await OP.countDocuments({
       date: { $gte: startOfDay, $lte: endOfDay },
     });
 
     const opCount = await OP.countDocuments({
-      status: { $in: ["Pending", "Doctor"] }, // 🩺 Active queue
+      status: { $in: ["Pending", "Doctor"] },
       date: { $gte: startOfDay, $lte: endOfDay },
     });
 
@@ -231,12 +225,7 @@ app.get("/api/admin/dashboard-counts", async (req, res) => {
       date: { $gte: startOfDay, $lte: endOfDay },
     });
 
-    res.json({
-      opCount, // Active queue
-      reportCount,
-      completedCount,
-      totalCount, // Optional if you want “Total Today”
-    });
+    res.json({ opCount, reportCount, completedCount, totalCount });
   } catch (err) {
     console.error("❌ Dashboard Count Error:", err);
     res.status(500).json({ error: "Failed to fetch dashboard counts" });
@@ -244,18 +233,17 @@ app.get("/api/admin/dashboard-counts", async (req, res) => {
 });
 
 // ======================================================
-// 🩺 7️⃣ CONSULTING QUEUE ENDPOINTS (Final Queue Logic)
+// 🩺 7️⃣ CONSULTING QUEUE ENDPOINTS
 // ======================================================
 app.get("/api/current-consulting", async (req, res) => {
   try {
     const current = await OP.findOne({ status: "Doctor" }).sort({ _id: 1 });
     res.json(current || {});
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to fetch consulting patient" });
   }
 });
 
-// ✅ Get Next in Queue
 app.get("/api/next-in-queue", async (req, res) => {
   try {
     const allPatients = await OP.find({}).sort({ date: -1, time: -1, _id: -1 }).lean();
@@ -283,7 +271,47 @@ app.get("/api/next-in-queue", async (req, res) => {
 });
 
 // ======================================================
-// 🚀 8️⃣ Start Server
+// 💊 9️⃣ SERVICE MANAGEMENT ROUTES
+// ======================================================
+app.get("/api/services", async (req, res) => {
+  try {
+    const services = await Service.find().sort({ createdAt: -1 });
+    res.json(services);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch services" });
+  }
+});
+
+app.post("/api/services", async (req, res) => {
+  try {
+    const newService = new Service(req.body);
+    await newService.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to add service" });
+  }
+});
+
+app.put("/api/services/:id", async (req, res) => {
+  try {
+    await Service.findByIdAndUpdate(req.params.id, req.body);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update service" });
+  }
+});
+
+app.delete("/api/services/:id", async (req, res) => {
+  try {
+    await Service.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to delete service" });
+  }
+});
+
+// ======================================================
+// 🚀 10️⃣ Start Server
 // ======================================================
 app.listen(process.env.PORT, () =>
   console.log(`🚀 Server running on port ${process.env.PORT}`)
