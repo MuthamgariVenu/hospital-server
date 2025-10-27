@@ -5,8 +5,6 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const twilio = require("twilio");
 const OP = require("./models/OP");
-const Service = require("./models/Service"); // ✅ NEW: Service model
-
 dotenv.config();
 
 const app = express();
