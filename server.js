@@ -223,7 +223,7 @@ app.get("/api/admin/dashboard-counts", async (req, res) => {
       date: { $gte: startOfDay, $lte: endOfDay },
     });
 
-    res.json({ opCount, reportCount, completedCount, totalCount });
+    res.json({ totalCount, reportCount, completedCount });
   } catch (err) {
     console.error("❌ Dashboard Count Error:", err);
     res.status(500).json({ error: "Failed to fetch dashboard counts" });

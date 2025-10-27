@@ -4,7 +4,34 @@ import OP from "../models/OP.js"; // 👈 Import your OP model
 
 dotenv.config();
 
-// 🩺 1️⃣ PATIENT BOOKING - Twilio + MongoDB Save
+/* 🧮 =========================================
+   Generate short sequential OP number (OP-01, OP-02...)
+   ========================================= */
+let counter = 1; // fallback counter in case DB query fails
+
+async function generateShortOPNumber() {
+  try {
+    // get the last OP created today
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const lastOP = await OP.findOne({ createdAt: { $gte: todayStart } }).sort({ createdAt: -1 });
+
+    if (!lastOP) return "OP-01";
+
+    const lastNum = parseInt(lastOP.opNumber?.split("-")[1]) || 0;
+    const newNum = (lastNum + 1).toString().padStart(2, "0");
+    return `OP-${newNum}`;
+  } catch (err) {
+    console.error("⚠️ OP Number generation failed, using fallback:", err);
+    const newNum = (counter++).toString().padStart(2, "0");
+    return `OP-${newNum}`;
+  }
+}
+
+/* 🩺 =========================================
+   1️⃣ PATIENT BOOKING - Twilio + MongoDB Save
+   ========================================= */
 export const bookOP = async (req, res) => {
   try {
     const { name, number, age, doctorName, department, time } = req.body;
@@ -13,8 +40,9 @@ export const bookOP = async (req, res) => {
       return res.status(400).json({ success: false, message: "All fields are required" });
     }
 
-    // Generate a unique OP number
-    const opNumber = `OP${Date.now()}`;
+    // ✅ Generate new short OP number
+    const opNumber = await generateShortOPNumber();
+
     const formattedDate = new Date().toLocaleDateString("en-GB", {
       day: "2-digit",
       month: "short",
@@ -66,7 +94,6 @@ export const getAllBookings = async (req, res) => {
       year: "numeric"
     });
 
-    // ✅ Fetch only today's records
     const data = await OP.find({ date: today }).sort({ time: 1 });
     res.json(data);
   } catch (err) {
