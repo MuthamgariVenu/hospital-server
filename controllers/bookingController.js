@@ -1,36 +1,38 @@
 import twilio from "twilio";
 import dotenv from "dotenv";
-import OP from "../models/OP.js"; // 👈 Import your OP model
+import OP from "../models/OP.js";
 
 dotenv.config();
 
-/* 🧮 =========================================
-   Generate short sequential OP number (OP-01, OP-02...)
+/* =========================================
+   🧮 Generate Daily Sequential OP Number
    ========================================= */
-let counter = 1; // fallback counter in case DB query fails
-
-async function generateShortOPNumber() {
+async function generateDailyOPNumber() {
   try {
-    // get the last OP created today
+    // Set start of today
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
+    // Find the latest OP created today
     const lastOP = await OP.findOne({ createdAt: { $gte: todayStart } }).sort({ createdAt: -1 });
 
-    if (!lastOP) return "OP-01";
+    if (!lastOP) {
+      return "OP-01"; // first OP of the day
+    }
 
+    // Extract numeric part
     const lastNum = parseInt(lastOP.opNumber?.split("-")[1]) || 0;
     const newNum = (lastNum + 1).toString().padStart(2, "0");
+
     return `OP-${newNum}`;
   } catch (err) {
-    console.error("⚠️ OP Number generation failed, using fallback:", err);
-    const newNum = (counter++).toString().padStart(2, "0");
-    return `OP-${newNum}`;
+    console.error("⚠️ Error generating OP number:", err);
+    return "OP-01";
   }
 }
 
-/* 🩺 =========================================
-   1️⃣ PATIENT BOOKING - Twilio + MongoDB Save
+/* =========================================
+   1️⃣ BOOK OP (Twilio + MongoDB)
    ========================================= */
 export const bookOP = async (req, res) => {
   try {
@@ -40,40 +42,40 @@ export const bookOP = async (req, res) => {
       return res.status(400).json({ success: false, message: "All fields are required" });
     }
 
-    // ✅ Generate new short OP number
-    const opNumber = await generateShortOPNumber();
+    // Generate new OP number
+    const opNumber = await generateDailyOPNumber();
 
-    const formattedDate = new Date().toLocaleDateString("en-GB", {
+    // ✅ Use the same date format as dashboard counts
+    const today = new Date().toLocaleDateString("en-GB", {
       day: "2-digit",
       month: "short",
-      year: "numeric"
+      year: "numeric",
     });
 
-    // Save booking to MongoDB
+    const currentTime = new Date().toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    // Save to DB
     const newOP = new OP({
       opNumber,
       patientName: name,
       doctorName: doctorName || "Not Assigned",
       department: department || "General",
-      time: time || new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
-      date: formattedDate,
-      status: "Pending"
+      time: time || currentTime,
+      date: today, // ✅ consistent with dashboard count logic
+      status: "Pending",
     });
 
     await newOP.save();
 
-    // Example ETA
+    // Send SMS via Twilio
+    const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+
     const eta = "30 minutes";
-
-    // Twilio SMS Setup
-    const client = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
-
-    // Send confirmation SMS to patient
     await client.messages.create({
-      body: `Ashwini Neuro Super Speciality Center\nYour OP booked successfully!\nOP Number: ${opNumber}\nDoctor ETA: ${eta}\nTrack: https://hospital-webapp.netlify.app/track-op`,
+      body: `Ashwini Neuro Super Speciality Center\nYour OP booked successfully!\nOP Number: ${opNumber}\nDoctor ETA: ${eta}\nTrack: https://ashwini-hospital-git-main-muthamgari.vercel.app/track-op.html`,
       from: process.env.TWILIO_PHONE_NUMBER,
       to: `+91${number}`,
     });
@@ -85,23 +87,33 @@ export const bookOP = async (req, res) => {
   }
 };
 
-// 🧠 2️⃣ ADMIN — FETCH ALL OP BOOKINGS (Today Only)
+/* =========================================
+   2️⃣ FETCH ALL OP BOOKINGS (Today Only) — FIFO FIXED
+   ========================================= */
 export const getAllBookings = async (req, res) => {
   try {
-    const today = new Date().toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric"
-    });
+    // Get start and end of today (midnight to 23:59)
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
 
-    const data = await OP.find({ date: today }).sort({ time: 1 });
-    res.json(data);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // ✅ Fetch today's bookings in FIFO order (first in → first out)
+    const data = await OP.find({
+      createdAt: { $gte: startOfDay, $lte: endOfDay },
+    }).sort({ createdAt: 1 }); // oldest first
+
+    res.json(data); // ✅ send response back
   } catch (err) {
+    console.error("Fetch Error:", err);
     res.status(500).json({ error: "Failed to fetch OP bookings" });
   }
 };
 
-// 🔁 3️⃣ ADMIN — UPDATE STATUS (Doctor / Report / Completed)
+/* =========================================
+   3️⃣ UPDATE STATUS
+   ========================================= */
 export const updateBookingStatus = async (req, res) => {
   try {
     const { status } = req.body;
@@ -117,21 +129,28 @@ export const updateBookingStatus = async (req, res) => {
   }
 };
 
-// 📊 4️⃣ ADMIN — DASHBOARD COUNTS (Today's Stats Only)
+/* =========================================
+   4️⃣ DASHBOARD COUNTS (Today's Stats)
+   ========================================= */
 export const getDashboardCounts = async (req, res) => {
   try {
     const today = new Date().toLocaleDateString("en-GB", {
       day: "2-digit",
       month: "short",
-      year: "numeric"
+      year: "numeric",
     });
 
-    const opCount = await OP.countDocuments({ date: today, status: "Pending" });
-    const reportCount = await OP.countDocuments({ date: today, status: "Report" });
-    const completedCount = await OP.countDocuments({ date: today, status: "Completed" });
+    // ✅ Count today's records by status
+    const [opCount, reportCount, completedCount] = await Promise.all([
+      OP.countDocuments({ date: today, status: "Pending" }),
+      OP.countDocuments({ date: today, status: "Report" }),
+      OP.countDocuments({ date: today, status: "Completed" }),
+    ]);
 
     res.json({ opCount, reportCount, completedCount });
   } catch (err) {
+    console.error("Dashboard Count Error:", err);
     res.status(500).json({ error: "Failed to fetch dashboard counts" });
   }
 };
+  
