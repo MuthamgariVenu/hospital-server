@@ -309,6 +309,7 @@ app.get("/api/next-in-queue", async (req, res) => {
   }
 });
 // ======================================================
+// ======================================================
 // 📄 REPORTS MODULE ROUTES (for Report Details Page)
 // ======================================================
 app.get("/api/reports/list", async (req, res) => {
@@ -317,10 +318,11 @@ app.get("/api/reports/list", async (req, res) => {
     const startOfDay = new Date(today.setHours(0, 0, 0, 0));
     const endOfDay = new Date(today.setHours(23, 59, 59, 999));
 
-  const reports = await OP.find({
+    const reports = await OP.find({
   status: { $in: ["Report", "Reports", "Ready", "Paid", "Completed"] },
   date: { $gte: startOfDay, $lte: endOfDay },
 }).sort({ createdAt: -1 });
+
 
     console.log("📋 Reports Found:", reports.length);
 
@@ -338,7 +340,6 @@ app.get("/api/reports/list", async (req, res) => {
     res.status(500).json({ success: false, message: "Error loading reports" });
   }
 });
-
 
 
 // ✅ FIXED VERSION — Safe Update Status (supports both opNo/opNumber)
