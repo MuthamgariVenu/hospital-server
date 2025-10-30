@@ -308,6 +308,87 @@ app.get("/api/next-in-queue", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch next queue" });
   }
 });
+// ======================================================
+// 📄 REPORTS MODULE ROUTES (for Report Details Page)
+// ======================================================
+app.get("/api/reports/list", async (req, res) => {
+  try {
+    const today = new Date();
+    const startOfDay = new Date(today.setHours(0, 0, 0, 0));
+    const endOfDay = new Date(today.setHours(23, 59, 59, 999));
+
+    // ✅ Include all possible report-related statuses
+    const reports = await OP.find({
+      status: { $in: ["Report", "Reports", "Ready", "Paid", "Completed"] },
+      date: { $gte: startOfDay, $lte: endOfDay },
+    }).sort({ createdAt: -1 });
+
+    console.log("📋 Reports Found:", reports.length);
+
+    res.json({
+      success: true,
+      reports: reports.map((r) => ({
+        opNumber: r.opNumber,
+        patientName: r.patientName,
+        patientNumber: r.patientNumber || r.patientMobile || "",
+        status: r.status,
+      })),
+    });
+  } catch (error) {
+    console.error("❌ Error fetching reports:", error);
+    res.status(500).json({ success: false, message: "Error loading reports" });
+  }
+});
+
+
+// ✅ FIXED VERSION — Safe Update Status (supports both opNo/opNumber)
+app.post("/api/reports/updateStatus", async (req, res) => {
+  try {
+    const { opNo, opNumber, name, mobile, status } = req.body;
+
+    // handle both opNo and opNumber from frontend
+    const searchOP = opNumber || opNo;
+
+    const updated = await OP.findOneAndUpdate(
+      { opNumber: searchOP },
+      { $set: { status: status } },
+      { new: true }
+    );
+
+    if (!updated) {
+      console.log("❌ OP not found:", searchOP);
+      return res.json({ success: false, message: "OP not found" });
+    }
+
+    console.log(`✅ Status updated → ${status} for ${searchOP}`);
+
+    // ✅ Send SMS only for "Ready" status
+    if (status === "Ready") {
+      try {
+        const client = require("twilio")(
+          process.env.TWILIO_ACCOUNT_SID,
+          process.env.TWILIO_AUTH_TOKEN
+        );
+
+        await client.messages.create({
+          body: `Ashwini Neuro Super Speciality Center\nDear ${name}, your report is ready. Please collect it from reception.`,
+          from: process.env.TWILIO_PHONE_NUMBER,
+          to: `+91${mobile}`,
+        });
+
+        console.log("📩 SMS sent to patient:", mobile);
+      } catch (smsError) {
+        console.error("⚠️ SMS Sending Failed:", smsError.message);
+      }
+    }
+
+    // ✅ Always return success (keeps record visible, no delete)
+    res.json({ success: true, message: "Status updated successfully" });
+  } catch (err) {
+    console.error("❌ Update Error:", err);
+    res.status(500).json({ success: false, message: "Status update failed" });
+  }
+});
 
 // ======================================================
 // 🚀 10️⃣ Start Server
